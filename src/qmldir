@@ -1,0 +1,4 @@
+GlassOverlay 1.0 GlassOverlay.qml
+GlassWidget 1.0 GlassWidget.qml
+singleton GlassLens 1.0 GlassLens.qml
+GlassScrim 1.0 GlassScrim.qml

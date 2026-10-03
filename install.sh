@@ -61,6 +61,7 @@ if [[ -e $target ]]; then
     exit 1
   fi
   echo "Using prepared checkout: $target"
+  python3 -B "$project_root/integrations/omarchy/apply.py" --refresh "$target"
 else
   stage=$(mktemp -d -- "$prefix/.omarchy-glass.XXXXXX")
   trap 'rm -rf -- "$stage"' EXIT
@@ -72,7 +73,7 @@ else
   echo "Patched Omarchy checkout: $target"
 fi
 reload_shell() {
-  for command_name in hyprctl quickshell setsid timeout; do
+  for command_name in hyprctl quickshell systemctl; do
     command -v "$command_name" >/dev/null || {
       echo "Missing required command for shell reload: $command_name" >&2
       return 1
@@ -87,26 +88,34 @@ reload_shell() {
     return 1
   fi
 
-  # omarchy restart shell reads the old session path until the next login.
-  # Use its Quickshell stop mechanism, then launch the linked tree explicitly.
+  # The restart helper reads the user manager's OMARCHY_PATH, while keybinds
+  # inherit Hyprland's. Switch both before using the native restart helper.
   current_path=$(systemctl --user show-environment 2>/dev/null | sed -n 's/^OMARCHY_PATH=//p' | tail -n 1) || true
   current_path=${current_path:-${OMARCHY_PATH:-/usr/share/omarchy}}
-  for shell_path in "$current_path/shell" "$target/shell"; do
-    while timeout 5 quickshell kill -p "$shell_path" --any-display >/dev/null 2>&1; do :; done
-  done
+  lua_target=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$target")
+  lua_previous=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$current_path")
+  systemctl --user set-environment "OMARCHY_PATH=$target"
+  if ! hyprctl eval "hl.env(\"OMARCHY_PATH\", $lua_target)" >/dev/null; then
+    systemctl --user set-environment "OMARCHY_PATH=$current_path"
+    return 1
+  fi
 
-  setsid -f env OMARCHY_PATH="$target" PATH="$target/bin:$PATH" \
-    "$target/bin/omarchy-launch-shell" >/dev/null 2>&1
-  for ((attempt = 0; attempt < 30; attempt++)); do
-    if OMARCHY_PATH="$target" "$target/bin/omarchy-shell" shell ping >/dev/null 2>&1; then
-      echo "Widget on Glass shell is running from $target"
-      return 0
-    fi
-    sleep 0.2
-  done
+  # omarchy restart shell only stops the tree it is about to launch.
+  if [[ $current_path != "$target" ]]; then
+    quickshell kill -p "$current_path/shell" --any-display >/dev/null 2>&1 || true
+  fi
+  if [[ $target != /usr/share/omarchy ]]; then
+    quickshell kill -p /usr/share/omarchy/shell --any-display >/dev/null 2>&1 || true
+  fi
+  if omarchy restart shell && OMARCHY_PATH="$target" "$target/bin/omarchy-shell" shell ping >/dev/null 2>&1; then
+    echo "Widget on Glass shell is running from $target"
+    return 0
+  fi
 
   echo "The new shell did not become ready; restoring the previous shell." >&2
-  while timeout 5 quickshell kill -p "$target/shell" --any-display >/dev/null 2>&1; do :; done
+  quickshell kill -p "$target/shell" --any-display >/dev/null 2>&1 || true
+  systemctl --user set-environment "OMARCHY_PATH=$current_path"
+  hyprctl eval "hl.env(\"OMARCHY_PATH\", $lua_previous)" >/dev/null || true
   omarchy restart shell || true
   return 1
 }
@@ -125,6 +134,7 @@ elif [[ $prepare_only == false ]]; then
   omarchy dev link "$target" --no-reboot
 fi
 if [[ $prepare_only == false ]]; then
+  python3 -B "$project_root/integrations/omarchy/apply.py" --local-plugins
   reload_shell
-  echo "Reboot later to align Hyprland and system services with this checkout. Restore the package with: omarchy dev unlink"
+  echo "Reboot later to align all session services with this checkout. Restore the package with: omarchy dev unlink"
 fi
