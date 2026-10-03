@@ -18,7 +18,9 @@ Isso é uma aproximação funcional, não uma reprodução fiel do Liquid Glass 
 
 ## Instalar ou aplicar a um checkout de código-fonte
 
-`./install.sh` detecta a versão do pacote Omarchy, clona o tag `v<versão>` oficial, aplica o adaptador e chama `omarchy dev link --no-reboot`. `./install.sh --prepare-only` cria o checkout sem alterar o vínculo do sistema. O instalador foi executado em modo `--prepare-only` com Omarchy `4.0.4` e destino temporário; o checkout gerado foi validado. Também criou o checkout real em `~/.local/share/widget-on-glass/omarchy-v4.0.4`, mas a ativação parou no pedido de senha do `sudo`; `omarchy dev status` continuou `inactive`. Executar `./install.sh` novamente em um terminal reutiliza o checkout e faz a ativação. O reboot não foi executado neste trabalho.
+`./install.sh` detecta a versão do pacote Omarchy, clona o tag `v<versão>` oficial, aplica o adaptador, chama `omarchy dev link --no-reboot` e recarrega a shell na sessão Hyprland atual. `./install.sh --prepare-only` cria o checkout sem alterar o vínculo do sistema. `./install.sh --reload-only` recarrega um checkout já vinculado, sem repetir o `sudo`. O reload para a shell antiga com `quickshell kill` e inicia `omarchy-launch-shell` com `OMARCHY_PATH` e `PATH` do checkout, esperando o ping de IPC; se a nova shell não ficar pronta, tenta restaurar a anterior. Não recarrega uma sessão bloqueada. Até o reboot, `omarchy restart shell` ainda lê o caminho antigo da sessão.
+
+Em 2026-10-03, `./install.sh --reload-only` iniciou `quickshell -n -p ~/.local/share/widget-on-glass/omarchy-v4.0.4/shell` na sessão atual e `omarchy-shell shell ping` respondeu `ok`. Isso confirma a ativação da shell, mas ainda não constitui inspeção visual ou medição de desempenho.
 
 ```sh
 python3 integrations/omarchy/apply.py /caminho/para/checkout-do-omarchy

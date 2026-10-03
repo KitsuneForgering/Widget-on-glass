@@ -14,7 +14,7 @@ cd Widget-on-glass
 ./install.sh
 ```
 
-O instalador lê a versão do pacote Omarchy, baixa o tag correspondente do código-fonte oficial para `~/.local/share/widget-on-glass/`, aplica a integração e executa `omarchy dev link --no-reboot`. O comando `dev link` usa `sudo` para apontar o sistema ao checkout; **reinicie o computador para ativar**. Depois do reboot, a barra padrão, seus painéis de teclado, menu, clipboard, emojis, notificações popup e OSD recebem o material.
+O instalador lê a versão do pacote Omarchy, baixa o tag correspondente do código-fonte oficial para `~/.local/share/widget-on-glass/`, aplica a integração, executa `omarchy dev link --no-reboot` e recarrega a shell na sessão Hyprland atual. O comando `dev link` usa `sudo` para apontar o sistema ao checkout. A barra padrão, seus painéis de teclado, menu, clipboard, emojis, notificações popup e OSD recebem o material após o reload. Reinicie depois para alinhar Hyprland e os serviços do sistema ao checkout.
 
 Para preparar e revisar o checkout sem alterar a instalação ativa:
 
@@ -28,7 +28,13 @@ Quando estiver pronto para ativar o checkout preparado, execute novamente em um 
 ./install.sh
 ```
 
-O instalador reutiliza o checkout preparado sem baixar tudo novamente. Reinicie depois.
+O instalador reutiliza o checkout preparado sem baixar tudo novamente. Se já executou a versão anterior do instalador e quer apenas ativar a shell nesta sessão, sem repetir o `sudo`:
+
+```sh
+./install.sh --reload-only
+```
+
+Antes do reboot, `omarchy restart shell` ainda usa o caminho antigo da sessão e pode restaurar a shell do pacote; nesse caso execute `./install.sh --reload-only` novamente.
 
 O instalador recusa sobrescrever um diretório existente que não seja um checkout preparado. Ele também falha se o código-fonte do Omarchy tiver mudado nos pontos que o adaptador modifica. Nesse caso, não ative um checkout parcialmente preparado.
 
