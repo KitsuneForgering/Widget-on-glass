@@ -7,6 +7,8 @@ from pathlib import Path
 qml = (Path(__file__).parents[1] / "src/GlassOverlay.qml").read_text()
 panel_alpha = float(re.search(r"property real baseOpacity: ([\d.]+)", qml)[1])
 bar_alpha = 0.75
+adapter = (Path(__file__).parents[1] / "integrations/omarchy/apply.py").read_text()
+launcher_alpha = float(re.search(r"LAUNCHER_GLASS = .*baseOpacity: ([\d.]+)", adapter)[1])
 
 
 def linear(channel):
@@ -19,9 +21,11 @@ def contrast(a, b):
     return (a + 0.05) / (b + 0.05)
 
 
-for alpha in (bar_alpha, panel_alpha):
+# Only opaque text is guaranteed: menu and clipboard secondary text is patched
+# to full opacity, while stock panel widgets keep their own dimmed labels.
+for alpha, text_alphas in ((bar_alpha, (1.0,)), (launcher_alpha, (1.0,)), (panel_alpha, (1.0,))):
     for surface, text in ((26, 202), (242, 28)):
-        for text_alpha in ((1.0,) if alpha == bar_alpha else (1.0, 0.86)):
+        for text_alpha in text_alphas:
             worst = float("inf")
             for backdrop in range(256):
                 background = surface * alpha + backdrop * (1 - alpha)

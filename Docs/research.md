@@ -1,101 +1,248 @@
-# Pesquisa: Liquid Glass para widgets Quickshell
+# Research: Liquid Glass for Quickshell widgets
 
-> Atualização de 2026-10-03: a integração Omarchy passou a pedir blur por região com `BackgroundEffect` e a pintar uma borda translúcida no Quickshell. O texto abaixo registra a pesquisa e o plano originais; a decisão de usar `ShaderEffectSource` com gradiente como material dos hosts foi substituída. Veja [implementation.md](implementation.md) para o estado atual e [compositor-refraction.md](compositor-refraction.md) para a investigação da refração do desktop real.
+> Update, 2026-10-03: the Omarchy integration now requests per-region blur with
+> `BackgroundEffect`, paints a translucent rim in Quickshell and refracts the
+> desktop across each rim with a Hyprland `screen_shader`. The text below records
+> the original research and plan; the decision to use `ShaderEffectSource` with a
+> gradient as the hosts' material was superseded. See
+> [implementation.md](implementation.md) for the current state and
+> [compositor-refraction.md](compositor-refraction.md) for the investigation of
+> refracting the real desktop.
 
-**Data da revisão:** 2026-10-03
-**Decisão:** desenvolver um material reutilizável na shell Quickshell e validá-lo primeiro na barra e em um painel real. Refração das janelas do desktop atrás da shell permanece uma capacidade separada, que exige uma fonte de pixels anterior à composição da própria shell.
-**Estado da evidência:** análise documental e de código; sem benchmark novo ou integração executada nesta revisão.
+**Revision date:** 2026-10-03
+**Decision:** build a reusable material in the Quickshell shell and validate it
+first on the bar and on a real panel. Refraction of the desktop windows behind
+the shell remains a separate capability, which needs a pixel source from before
+the shell itself is composited.
+**State of the evidence:** documentation and code analysis; no new benchmark or
+integration was run in this revision.
 
-## Pergunta e escopo
+## Question and scope
 
-Como aplicar uma superfície inspirada no Liquid Glass da Apple aos widgets da **shell inteira**, com shader executado na GPU, sem clonar cada plugin? Aqui, “acima dos widgets” significa uma linguagem visual comum ao conjunto de widgets. Na composição de cada controle, o material deve ficar **atrás do texto, ícones e área interativa**. Desenhar uma captura dos widgets por cima deles distorceria o conteúdo e poderia prejudicar a leitura.
+How can a surface inspired by Apple's Liquid Glass be applied to the widgets of
+the **whole shell**, with a shader running on the GPU, without cloning every
+plugin? Here "above the widgets" means a visual language shared by the set of
+widgets. Within each control, the material must sit **behind the text, icons and
+interactive area**. Drawing a capture of the widgets on top of them would
+distort the content and could hurt legibility.
 
-O projeto é um protótipo QML/GLSL para Quickshell no Omarchy. A referência inspecionada é o commit `d255288`. No momento da revisão, `LiquidGlass.qml`, `shaders/glass.frag`, `Panel.qml`, `Preview.qml`, testes e a documentação do commit estavam **removidos do diretório de trabalho**; foram lidos com `git show HEAD:<arquivo>`. Esta pesquisa não restaura esses arquivos nem altera a shell instalada. A instalação local oferece Quickshell 0.3.1 e `qsb` 6.11.2. O comando `hyprctl version` não conseguiu acessar o socket nesta revisão, portanto não há confirmação atual do compositor em execução.
+The project is a QML/GLSL prototype for Quickshell on Omarchy. The inspected
+reference is commit `d255288`. At the time of this revision, `LiquidGlass.qml`,
+`shaders/glass.frag`, `Panel.qml`, `Preview.qml`, the tests and the commit's
+documentation were **removed from the working tree**; they were read with
+`git show HEAD:<file>`. This research neither restores those files nor changes
+the installed shell. The local installation provides Quickshell 0.3.1 and `qsb`
+6.11.2. `hyprctl version` could not reach the socket during this revision, so
+there is no current confirmation of the running compositor.
 
-Critérios da decisão, definidos antes de qualquer piloto: (1) material comum sem cópia do código de cada widget; (2) conteúdo e interação preservados; (3) fonte de fundo definida sem realimentação; (4) custo mensurado contra o visual atual; (5) fallback opaco e manutenção proporcionais ao ganho visual. O custo de errar inclui texto ilegível, latência perceptível, uso contínuo da GPU e uma arquitetura impossível de manter entre atualizações.
+Decision criteria, set before any pilot: (1) a common material without copying
+each widget's code; (2) content and interaction preserved; (3) a defined
+background source without feedback; (4) cost measured against the current look;
+(5) an opaque fallback and maintenance proportional to the visual gain. The cost
+of getting it wrong includes unreadable text, noticeable latency, continuous GPU
+use and an architecture that cannot be maintained across updates.
 
-## Hipóteses e evidência que as distinguiria
+## Hypotheses and the evidence that would tell them apart
 
-| Hipótese | Estado atual | Resultado que a enfraqueceria |
+| Hypothesis | Current state | Result that would weaken it |
 |---|---|---|
-| H1: `ShaderEffect` e `ShaderEffectSource` bastam para refratar uma fonte QML conhecida | Sustentada pela API do Qt e pelo protótipo do commit; integração geral pendente | Falha visual ou custo excessivo num painel real com fundo animado |
-| H2: uma única camada QML pode refratar automaticamente tudo atrás de todas as janelas da shell | Não sustentada: as entradas documentadas não fornecem a cena do compositor anterior a cada superfície | Um protocolo/API comprovado que entregue esse buffer, exclua a própria shell e preserve sincronização |
-| H3: integrar nos pontos hospedeiros evita clonar plugins | Sustentada para widgets que passam pelo host da barra; cobertura de painéis com `PanelWindow` próprio ainda exige trabalho | Um widget hospedado que não possa usar o material sem modificar sua implementação |
-| H4: a GPU integrada mantém custo aceitável em vários containers | Aberta; há apenas contagem analítica de pixels e texturas | Medição representativa acima do orçamento de quadro ou aumento de energia considerado inaceitável |
-| H5: a semelhança visual com a Apple melhora a experiência | Aberta; a Apple descreve propriedades e usos, sem publicar seu shader nem medir preferência destes usuários | Teste comparativo em que blur simples seja preferido ou torne os controles mais legíveis |
+| H1: `ShaderEffect` and `ShaderEffectSource` are enough to refract a known QML source | Supported by the Qt API and the commit's prototype; general integration pending | Visual failure or excessive cost on a real panel with an animated background |
+| H2: a single QML layer can automatically refract everything behind every shell window | Not supported: the documented inputs do not provide the compositor scene from before each surface | A proven protocol or API that delivers that buffer, excludes the shell itself and keeps synchronization |
+| H3: integrating at the host points avoids cloning plugins | Supported for widgets that go through the bar host; panels with their own `PanelWindow` still need work | A hosted widget that cannot use the material without changing its implementation |
+| H4: the integrated GPU keeps an acceptable cost across several containers | Open; only an analytic count of pixels and textures exists | A representative measurement above the frame budget, or an unacceptable energy increase |
+| H5: visual similarity to Apple improves the experience | Open; Apple describes properties and uses, without publishing its shader or measuring these users' preference | A comparative test where plain blur is preferred or makes the controls more legible |
 
-## Fundamentos e limites da plataforma
+## Platform foundations and limits
 
-O [`ShaderEffectSource` do Qt](https://doc.qt.io/qt-6/qml-qtquick-shadereffectsource.html) rasteriza um `sourceItem` QML em textura; `live` a atualiza quando a fonte muda. A documentação avisa que isso acrescenta uso de memória de vídeo e normalmente reduz desempenho. Dependência recursiva exige outra textura e, com `live`, pode manter renderização contínua. O [`ShaderEffect`](https://doc.qt.io/qt-6/qml-qtquick-shadereffect.html) aplica o shader à geometria do item; no Qt 6 usa arquivo `.qsb`, e o backend software não executa o efeito. Essas são propriedades da cena Qt, não uma API para ler o framebuffer do compositor.
+Qt's [`ShaderEffectSource`](https://doc.qt.io/qt-6/qml-qtquick-shadereffectsource.html)
+rasterizes a QML `sourceItem` into a texture; `live` updates it when the source
+changes. The documentation warns that this adds video memory use and usually
+reduces performance. A recursive dependency needs another texture and, with
+`live`, can keep rendering continuously.
+[`ShaderEffect`](https://doc.qt.io/qt-6/qml-qtquick-shadereffect.html) applies
+the shader to the item's geometry; in Qt 6 it uses a `.qsb` file, and the
+software backend does not run the effect. These are properties of the Qt scene,
+not an API for reading the compositor's framebuffer.
 
-O [`ScreencopyView` do Quickshell 0.3.1](https://quickshell.org/docs/v0.3.1/types/Quickshell.Wayland/ScreencopyView/) aceita monitor ou janela como `captureSource`, condicionados aos protocolos disponíveis. Sua API não documenta uma captura “todos os pixels atrás desta superfície, excluindo esta superfície”. **Inferência:** uma captura ao vivo de monitor aplicada sobre o próprio monitor pode produzir realimentação ou atraso; seria necessário um experimento específico para saber o comportamento local. Uma captura de uma única janela também não representa todas as superfícies atrás de um painel.
+[Quickshell 0.3.1's `ScreencopyView`](https://quickshell.org/docs/v0.3.1/types/Quickshell.Wayland/ScreencopyView/)
+takes a monitor or a window as `captureSource`, subject to the available
+protocols. Its API does not document a capture of "every pixel behind this
+surface, excluding this surface". **Inference:** a live capture of a monitor
+applied over that same monitor can produce feedback or delay; a specific
+experiment would be needed to know the local behaviour. A capture of a single
+window does not represent every surface behind a panel either.
 
-O [`QsWindow` do Quickshell](https://quickshell.org/docs/v0.3.1/types/Quickshell/QsWindow/) oferece `contentItem`, máscara de entrada e escala por janela. Isso ajuda a compor o material **dentro** de cada janela, sem criar uma janela de overlay que cubra toda a tela. A máscara resolve regiões clicáveis; não fornece pixels de fundo. Como a shell Omarchy instalada cria a barra em `/usr/share/omarchy/shell/plugins/bar/Bar.qml:1234` e carrega painéis em `/usr/share/omarchy/shell/shell.qml:1293`, não existe uma árvore visual única que possa ser envolvida por um `ShaderEffectSource`. O slot de cada módulo da barra está em `Bar.qml:1773`; painéis podem criar suas próprias superfícies.
+Quickshell's [`QsWindow`](https://quickshell.org/docs/v0.3.1/types/Quickshell/QsWindow/)
+offers `contentItem`, an input mask and per-window scale. This helps compose the
+material **inside** each window, without creating an overlay window that covers
+the whole screen. The mask handles clickable regions; it does not provide
+background pixels. Since the installed Omarchy shell creates the bar in
+`/usr/share/omarchy/shell/plugins/bar/Bar.qml:1234` and loads panels in
+`/usr/share/omarchy/shell/shell.qml:1293`, there is no single visual tree that a
+`ShaderEffectSource` could wrap. Each bar module's slot is in `Bar.qml:1773`;
+panels can create their own surfaces.
 
-A função GLSL [`refract` da Khronos](https://registry.khronos.org/OpenGL/specs/gl/GLSLangSpec.4.60.html) fundamenta a direção do raio em uma interface idealizada. O shader do commit usa uma normal sintética na borda, `eta = 1/ior` e deslocamento em pixels proporcionado por `thickness × ray.xy / -ray.z` (`shaders/glass.frag:23-42`). `ior`, espessura efetiva, normal e luz são parâmetros artísticos, não medidas do material da Apple. A [apresentação da Apple sobre Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/) sustenta a inspiração em lensing, adaptação, highlights, interação e prioridade de legibilidade; não permite alegar equivalência de implementação.
+The Khronos GLSL [`refract`](https://registry.khronos.org/OpenGL/specs/gl/GLSLangSpec.4.60.html)
+function grounds the ray direction at an idealized interface. The commit's
+shader uses a synthetic normal at the edge, `eta = 1/ior` and a pixel
+displacement proportional to `thickness × ray.xy / -ray.z`
+(`shaders/glass.frag:23-42`). `ior`, effective thickness, normal and light are
+artistic parameters, not measurements of Apple's material.
+[Apple's Liquid Glass presentation](https://developer.apple.com/videos/play/wwdc2025/219/)
+supports the inspiration in lensing, adaptation, highlights, interaction and
+legibility as a priority; it does not allow a claim of equivalent
+implementation.
 
-## Revisão da implementação existente
+## Review of the existing implementation
 
-Fluxo do commit: fundo QML explícito → `ShaderEffectSource` local ou compartilhado → amostragem no shader → superfície arredondada → conteúdo do widget desenhado em primeiro plano. `LiquidGlass.qml:41-56` escolhe a fonte e o recorte; `:72-105` instancia o efeito e a captura; `:108` mantém o conteúdo em um item posterior. `shaders/glass.frag:22-59` calcula máscara, normal, refração, uma amostra de textura, cor e alfa. `Panel.qml:17-32` apresenta apenas o preview em um `PanelWindow`. O manifesto do commit registra esse painel, não uma extensão global da shell.
+The commit's flow: explicit QML background → local or shared
+`ShaderEffectSource` → sampling in the shader → rounded surface → the widget's
+content drawn in front. `LiquidGlass.qml:41-56` picks the source and the crop;
+`:72-105` instantiates the effect and the capture; `:108` keeps the content in a
+later item. `shaders/glass.frag:22-59` computes the mask, normal, refraction, one
+texture sample, colour and alpha. `Panel.qml:17-32` only presents the preview in
+a `PanelWindow`. The commit's manifest registers that panel, not a global shell
+extension.
 
-**Escolhas que fazem sentido:** conteúdo separado do shader; textura compartilhável por vários containers dentro da mesma cena; fallback opaco; limites dos parâmetros; nenhuma dependência gráfica adicional além de Qt/Quickshell. O preview e `tests/render.qml` do commit registram controles ópticos e comparações de imagens, mas os testes não foram repetidos nesta revisão porque os arquivos estão ausentes do diretório de trabalho. Os relatos em `docs/tese.md` são histórico do projeto, não uma nova medição independente.
+**Choices that make sense:** content separate from the shader; a texture that
+several containers in the same scene can share; an opaque fallback; bounded
+parameters; no graphics dependency beyond Qt and Quickshell. The commit's
+preview and `tests/render.qml` record optical controls and image comparisons,
+but the tests were not repeated in this revision because the files are missing
+from the working tree. The accounts in `docs/tese.md` are project history, not a
+new independent measurement.
 
-**Limites confirmados:** `sourcePosition` subtrai `x/y` de irmãos sem transformações (`LiquidGlass.qml:50-56`); não é um mapeamento geral entre itens ou janelas. A fonte local usa margem fixa de 130 px em torno de cada container (`:49-56`), independentemente do deslocamento efetivo. O shader restringe UV a `[0,1]` (`glass.frag:42`), o que pode esticar pixels na borda quando o recorte não cobre uma amostra. `sharedSource` elimina texturas locais duplicadas para uma região QML comum, mas não une as formas nem atravessa janelas Wayland. Estas são limitações de correção ou escala sob certos layouts, não gargalos medidos.
+**Confirmed limits:** `sourcePosition` subtracts `x/y` of siblings without
+transforms (`LiquidGlass.qml:50-56`); it is not a general mapping between items
+or windows. The local source uses a fixed 130 px margin around each container
+(`:49-56`), regardless of the effective displacement. The shader clamps UVs to
+`[0,1]` (`glass.frag:42`), which can stretch pixels at the edge when the crop
+does not cover a sample. `sharedSource` removes duplicated local textures for a
+common QML region, but it neither joins the shapes nor crosses Wayland windows.
+These are correctness or scale limitations under certain layouts, not measured
+bottlenecks.
 
-## Modelo algorítmico e de recursos
+## Algorithmic and resource model
 
-Sejam `N` containers, `Aᵢ = WᵢHᵢ` suas áreas em pixels lógicos, `D` a escala física por eixo, `F` quadros por segundo, `P` a margem lógica da textura local e `S` amostras de textura por fragmento coberto. O shader atual tem `S = 1` e trabalho aproximado `Θ(D² ΣAᵢ)` por quadro, mais o passe de geração das texturas e a composição. A carga de leituras do passe é aproximadamente `F S D² ΣAᵢ` por segundo. Uma fonte local por container retém pelo menos `4D² Σ(Wᵢ+2P)(Hᵢ+2P)` bytes em RGBA8, sem MSAA, buffers temporários, alinhamento ou cópias. Uma fonte QML compartilhada de área `B` troca essa parcela por aproximadamente `4D²B` bytes, além dos passes separados de cada container. Compartilhar só compensa se a área comum e sua taxa de atualização justificarem o recorte; sua invalidação também pode redesenhar regiões que não mudaram.
+Let `N` be the number of containers, `Aᵢ = WᵢHᵢ` their areas in logical pixels,
+`D` the physical scale per axis, `F` frames per second, `P` the local texture's
+logical margin and `S` texture samples per covered fragment. The current shader
+has `S = 1` and roughly `Θ(D² ΣAᵢ)` work per frame, plus the pass that generates
+the textures and the composition. The pass reads roughly `F S D² ΣAᵢ` samples
+per second. One local source per container holds at least
+`4D² Σ(Wᵢ+2P)(Hᵢ+2P)` bytes in RGBA8, without MSAA, temporary buffers, alignment
+or copies. A shared QML source of area `B` trades that for roughly `4D²B` bytes,
+plus each container's separate pass. Sharing only pays off if the common area
+and its update rate justify the crop; invalidating it can also redraw regions
+that did not change.
 
-Conta local reproduzida nesta revisão com aritmética Python: seis containers de `360×180`, `D=2`, `F=60` geram **93.312.000 fragmentos/s** no passe de efeito. Com `P=130`, seis fontes locais somam **24,98 MiB** em RGBA8; uma região compartilhada de `640×480` usa **4,69 MiB**. São cenários sintéticos do tamanho do preview, não estimativas de milissegundos, consumo elétrico ou memória total. O custo de captura pode dominar: a [orientação de desempenho do Qt](https://doc.qt.io/qt-6/qtquick-performance.html) recomenda medir o pré-render de `ShaderEffectSource` e o shader por pixel.
+Local count reproduced in this revision with Python arithmetic: six `360×180`
+containers, `D=2`, `F=60` produce **93,312,000 fragments/s** in the effect pass.
+With `P=130`, six local sources add up to **24.98 MiB** in RGBA8; a shared
+`640×480` region uses **4.69 MiB**. These are synthetic scenarios at the
+preview's size, not estimates of milliseconds, power draw or total memory. The
+capture cost can dominate: Qt's
+[performance guidance](https://doc.qt.io/qt-6/qtquick-performance.html)
+recommends measuring the `ShaderEffectSource` pre-render and the per-pixel
+shader.
 
-Prioridades algorítmicas: (1) evitar capturar a mesma região várias vezes; (2) renderizar apenas superfícies visíveis e atualizar fundos estáticos sob demanda; (3) limitar a área capturada com margem derivada do maior deslocamento permitido e uma guarda de filtragem; (4) só então ajustar instruções do shader ou resolução. Uma margem menor sem prova de cobertura troca memória por artefatos. Nenhuma dessas mudanças possui ganho medido neste projeto.
+Algorithmic priorities: (1) avoid capturing the same region several times;
+(2) render only visible surfaces and update static backgrounds on demand;
+(3) bound the captured area with a margin derived from the largest allowed
+displacement plus a filtering guard; (4) only then tune shader instructions or
+resolution. A smaller margin without proof of coverage trades memory for
+artefacts. None of these changes has a measured gain in this project.
 
-## Arquitetura candidata para a shell inteira
+## Candidate architecture for the whole shell
 
-1. Manter **um único material** QML + `.qsb`, com contrato para fonte, geometria, estado de interação, acessibilidade e fallback.
-2. Na barra, integrar a camada visual no host da superfície e nos `ModuleSlot` existentes, preservando seus `Loader`, IPC, foco e ordem de desenho. Vários slots da mesma janela podem ler uma textura compartilhada da fonte QML disponível; não devem capturar um ancestral que inclua o próprio vidro.
-3. Para painéis, usar um componente hospedeiro comum ao criar novos `PanelWindow` e adaptar os painéis existentes que criam janelas próprias. Alterar só o `Loader` de `shell.qml:1335` não envolve automaticamente o conteúdo visual das janelas criadas pelos plugins. A cobertura da shell deve ser inventariada por **superfície**, incluindo popups e overlays, antes de afirmar que é global.
-4. Em cada janela, compor na ordem: fundo conhecido → material refrativo → ícones/texto/controles. Preservar entradas e regiões clicáveis. Se o fundo real não estiver disponível, usar superfície opaca ou visual estilizado explicitamente rotulado como tal.
-5. Se a exigência for refratar aplicativos do desktop, investigar uma integração que forneça à shell o buffer pré-composição, junto com coordenadas, escala, sincronização e exclusão da própria superfície. Sem essa prova, não fundar a arquitetura em screencopy. A alternativa nativa de blur do compositor continua o comparador mais simples para esse requisito visual.
+1. Keep **a single material**, QML + `.qsb`, with a contract for source,
+   geometry, interaction state, accessibility and fallback.
+2. On the bar, integrate the visual layer in the surface's host and in the
+   existing `ModuleSlot`s, keeping their `Loader`, IPC, focus and draw order.
+   Several slots in the same window can read a texture shared from the available
+   QML source; they must not capture an ancestor that includes the glass itself.
+3. For panels, use a common host component when creating new `PanelWindow`s and
+   adapt the existing panels that create their own windows. Changing only the
+   `Loader` at `shell.qml:1335` does not automatically wrap the visual content of
+   the windows that plugins create. Shell coverage must be inventoried **per
+   surface**, including popups and overlays, before calling it global.
+4. In each window, compose in this order: known background → refractive
+   material → icons, text and controls. Keep inputs and clickable regions. If
+   the real background is not available, use an opaque surface or a stylized
+   look that is explicitly labelled as such.
+5. If refracting desktop applications is a requirement, investigate an
+   integration that hands the shell the pre-composition buffer, together with
+   coordinates, scale, synchronization and exclusion of the surface itself.
+   Without that proof, do not base the architecture on screencopy. The
+   compositor's native blur remains the simplest comparison for that visual
+   requirement.
 
-Essa arquitetura requer mudanças nos pontos de hospedagem da shell; **não** propõe clonar plugins. Ela também não promete aplicar o material a janelas Quickshell independentes que não adotem o contrato comum. Uma janela de overlay em tela cheia tampouco transforma, por si, seus pixels em uma fonte pré-composição.
+This architecture needs changes at the shell's host points; it does **not**
+propose cloning plugins. It also does not promise to apply the material to
+independent Quickshell windows that do not adopt the common contract. A
+full-screen overlay window does not by itself turn its pixels into a
+pre-composition source either.
 
-## Comparação e plano de validação
+## Comparison and validation plan
 
-| Opção | Fundo do desktop real | Reuso na shell | Custo/risco principal | Decisão |
+| Option | Real desktop background | Reuse across the shell | Main cost or risk | Decision |
 |---|---|---|---|---|
-| Transparência e blur do compositor | Sim, segundo a configuração do compositor | Por superfície/layer | Sem refração geométrica do shader | Baseline |
-| Shader QML com fonte conhecida | Apenas fonte fornecida | Alto nos hosts integrados | Captura extra, recorte e cobertura das janelas | **Piloto recomendado** |
-| Screencopy de monitor + shader | Captura do monitor | Possível, ainda não demonstrado | Feedback, atraso, exclusão e escala | Não adotar sem experimento discriminante |
-| Fonte pré-composição do compositor | Potencialmente sim | Depende da interface com a shell | Desenvolvimento e manutenção do compositor | Pesquisa separada se desktop real for requisito |
+| Compositor transparency and blur | Yes, per the compositor's configuration | Per surface or layer | No geometric refraction from the shader | Baseline |
+| QML shader with a known source | Only the supplied source | High at the integrated hosts | Extra capture, cropping and window coverage | **Recommended pilot** |
+| Monitor screencopy + shader | Monitor capture | Possible, not yet shown | Feedback, delay, exclusion and scale | Do not adopt without a discriminating experiment |
+| Compositor pre-composition source | Potentially yes | Depends on the interface with the shell | Compositor development and maintenance | Separate research if the real desktop is a requirement |
 
-**Piloto proposto, ainda não executado:** integrar uma barra e um painel com fundo QML animado; comparar em ordem alternada (A) visual atual/blur, (B) material com captura local e (C) material com captura compartilhada, mantendo geometria, conteúdo, escala e hardware iguais. Medir tempo de quadro p50/p95, uso de memória GPU quando disponível, quadros perdidos, taxa de atualização em repouso, comportamento com 1 e 6 containers e escalas 1 e 2. Registrar GPU, versões, resolução, backend Qt e carga. Critério inicial **escolhido para o piloto**, sujeito a revisão antes dos resultados: acréscimo p95 ≤2 ms a 60 Hz, ausência de feedback/artefatos e texto tão legível quanto no baseline. Testar hover, clique, painéis ocultos, fundos claros/escuros e fallback; verificação de contraste deve incluir os pixels realmente apresentados, conforme [WCAG 2.2, 1.4.6](https://www.w3.org/TR/WCAG22/#contrast-enhanced). Uma captura de screenshot e o teste óptico do shader não substituem essas medições.
+**Proposed pilot, not yet run:** integrate a bar and a panel with an animated
+QML background; compare, in alternating order, (A) the current look or blur,
+(B) the material with local capture and (C) the material with shared capture,
+keeping geometry, content, scale and hardware the same. Measure p50/p95 frame
+time, GPU memory use when available, dropped frames, update rate at rest, and
+behaviour with 1 and 6 containers at scales 1 and 2. Record the GPU, versions,
+resolution, Qt backend and load. Initial criterion **chosen for the pilot**,
+open to revision before the results: p95 increase ≤2 ms at 60 Hz, no feedback
+or artefacts, and text as legible as the baseline. Test hover, click, hidden
+panels, light and dark backgrounds and the fallback; the contrast check must
+include the pixels actually presented, per
+[WCAG 2.2, 1.4.6](https://www.w3.org/TR/WCAG22/#contrast-enhanced). A
+screenshot and the shader's optical test do not replace these measurements.
 
-Para a hipótese de desktop real, fazer antes uma prova mínima com uma superfície Quickshell e uma janela em movimento atrás dela: verificar se a fonte recebida exclui a própria superfície em todos os quadros, mantém alinhamento sob escala/movimento e não adiciona atraso perceptível. Se qualquer condição falhar, manter essa capacidade fora do escopo QML. Nenhum experimento desse tipo foi executado aqui.
+For the real-desktop hypothesis, first build a minimal proof with one
+Quickshell surface and a moving window behind it: check that the received
+source excludes the surface itself on every frame, keeps alignment under scale
+and movement, and adds no noticeable delay. If any condition fails, keep that
+capability out of the QML scope. No such experiment was run here.
 
-## Decisão de engenharia
+## Engineering decision
 
-| Prioridade | Ação | Evidência e benefício esperado | Verificação |
+| Priority | Action | Evidence and expected benefit | Verification |
 |---|---|---|---|
-| Alta | Restaurar ou localizar a implementação antes de desenvolver; integrar o material no host da barra e em um painel | O commit tem o componente, mas o diretório de trabalho não; o preview não cobre widgets reais | Ambos usam o mesmo componente, sem cópia por plugin |
-| Alta | Definir a fonte por janela e impedir dependência recursiva | A API Qt captura apenas `sourceItem`; recursão pode forçar render contínuo | Fundo animado sem feedback; repouso sem atualização desnecessária |
-| Média | Substituir a posição por mapeamento correto e limitar o recorte com prova | O cálculo atual pressupõe irmãos sem transformações; margem local custa memória | Testes com deslocamento, escala e bordas sem clamp visível |
-| Experimental | Obter fundo pré-composição do compositor | Único caminho identificado para refração confiável do desktop real | Prova mínima com exclusão, sincronização e custo medidos |
+| High | Restore or locate the implementation before building; integrate the material in the bar host and in one panel | The commit has the component, the working tree does not; the preview does not cover real widgets | Both use the same component, with no per-plugin copy |
+| High | Define the source per window and prevent recursive dependencies | The Qt API captures only `sourceItem`; recursion can force continuous rendering | Animated background without feedback; no unnecessary updates at rest |
+| Medium | Replace the position with a correct mapping and bound the crop with proof | The current calculation assumes siblings without transforms; the local margin costs memory | Tests with displacement, scale and edges without visible clamping |
+| Experimental | Get a pre-composition background from the compositor | The only path identified for reliable refraction of the real desktop | Minimal proof with exclusion, synchronization and measured cost |
 
-**Conclusão condicional:** aplicar o material na shell para fundos QML conhecidos, com piloto e fallback. Não descrever o resultado como refração do desktop real nem como implementação equivalente à Apple. O fator mais capaz de mudar a arquitetura é a existência comprovada de uma fonte pré-composição adequada. A pesquisa examinou o commit, caminhos relevantes da shell instalada e documentação primária de Qt, Quickshell, Khronos e Apple; parou quando a escolha do piloto ficou sustentada. Compatibilidade em outras versões, desempenho e preferência dos usuários continuam abertos.
+**Conditional conclusion:** apply the material in the shell for known QML
+backgrounds, with a pilot and a fallback. Do not describe the result as
+refraction of the real desktop or as an implementation equivalent to Apple's.
+The factor most able to change the architecture is the proven existence of a
+suitable pre-composition source. The research examined the commit, relevant
+paths of the installed shell and primary documentation from Qt, Quickshell,
+Khronos and Apple; it stopped once the pilot choice was supported. Compatibility
+with other versions, performance and user preference remain open.
 
-## Fontes e rastreabilidade
+## Sources and traceability
 
-Fontes acessadas em **2026-10-03**. As páginas de Qt abertas nesta revisão descrevem Qt **6.12**, enquanto o `qsb` instalado é **6.11.2**; a correspondência exata do comportamento local exige teste. Datas de atualização das páginas, quando não indicadas, são desconhecidas.
+Sources accessed on **2026-10-03**. The Qt pages opened in this revision describe
+Qt **6.12**, while the installed `qsb` is **6.11.2**; matching the local
+behaviour exactly needs testing. Page update dates, when not shown, are unknown.
 
-| Origem | Trecho utilizado | Papel e limite |
+| Source | Part used | Role and limit |
 |---|---|---|
-| [Qt, ShaderEffectSource](https://doc.qt.io/qt-6/qml-qtquick-shadereffectsource.html) | Detailed Description; `sourceItem`, `live`, `recursive`, `sourceRect` | Contrato da captura QML e alertas de custo; não mede esta shell |
-| [Qt, ShaderEffect](https://doc.qt.io/qt-6/qml-qtquick-shadereffect.html) | Shaders; suporte do backend | Contrato do shader Qt 6; não confirma esta GPU |
-| [Qt, Performance](https://doc.qt.io/qt-6/qtquick-performance.html) | Shader Effects | Orientação para medir captura e fragmentos |
-| [Quickshell 0.3.1, ScreencopyView](https://quickshell.org/docs/v0.3.1/types/Quickshell.Wayland/ScreencopyView/) | `captureSource`, `live` | Entradas documentadas; ausência de garantia de exclusão é limite documental |
-| [Quickshell 0.3.1, QsWindow](https://quickshell.org/docs/v0.3.1/types/Quickshell/QsWindow/) | `contentItem`, `mask`, `devicePixelRatio` | Superfície, entrada e escala por janela |
-| [Khronos, GLSL 4.60](https://registry.khronos.org/OpenGL/specs/gl/GLSLangSpec.4.60.html) | função `refract` | Fundamento matemático de uma interface, não do material Apple |
-| [Apple, Meet Liquid Glass, WWDC25](https://developer.apple.com/videos/play/wwdc2025/219/) | Dynamics, Adaptivity, Principles | Referência de comportamento visual e legibilidade; não divulga shader interno |
-| Omarchy instalado | `shell.qml:1293-1365`; `plugins/bar/Bar.qml:1234-1284,1773-1872` | Evidência local dos pontos de hospedagem; pode mudar com atualização |
-| Commit `d255288` | `LiquidGlass.qml`, `shaders/glass.frag`, `Panel.qml`, `tests/render.qml`, `docs/tese.md` | Implementação e testes históricos; arquivos ausentes da árvore de trabalho atual |
+| [Qt, ShaderEffectSource](https://doc.qt.io/qt-6/qml-qtquick-shadereffectsource.html) | Detailed Description; `sourceItem`, `live`, `recursive`, `sourceRect` | Contract of the QML capture and cost warnings; does not measure this shell |
+| [Qt, ShaderEffect](https://doc.qt.io/qt-6/qml-qtquick-shadereffect.html) | Shaders; backend support | Qt 6 shader contract; does not confirm this GPU |
+| [Qt, Performance](https://doc.qt.io/qt-6/qtquick-performance.html) | Shader Effects | Guidance for measuring capture and fragments |
+| [Quickshell 0.3.1, ScreencopyView](https://quickshell.org/docs/v0.3.1/types/Quickshell.Wayland/ScreencopyView/) | `captureSource`, `live` | Documented inputs; the lack of an exclusion guarantee is a documentation limit |
+| [Quickshell 0.3.1, QsWindow](https://quickshell.org/docs/v0.3.1/types/Quickshell/QsWindow/) | `contentItem`, `mask`, `devicePixelRatio` | Per-window surface, input and scale |
+| [Khronos, GLSL 4.60](https://registry.khronos.org/OpenGL/specs/gl/GLSLangSpec.4.60.html) | the `refract` function | Mathematical basis of an interface, not of Apple's material |
+| Installed Omarchy | `shell.qml:1293-1365`; `plugins/bar/Bar.qml:1234-1284,1773-1872` | Local evidence of the host points; can change with an update |
+| Commit `d255288` | `LiquidGlass.qml`, `shaders/glass.frag`, `Panel.qml`, `tests/render.qml`, `docs/tese.md` | Historical implementation and tests; files missing from the current working tree |

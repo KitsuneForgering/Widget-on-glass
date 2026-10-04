@@ -233,6 +233,11 @@ def remove_appearance(checkout: Path) -> None:
         (shell / "Ui" / name).unlink(missing_ok=True)
 
 
+# Launchers sit over a veil with a hole, so they can be clearer than panels; their
+# secondary text is fully opaque to keep 4.5:1 at this opacity.
+LAUNCHER_GLASS = "GlassOverlay { anchors.fill: parent; radius: card.radius; tint: root.background; baseOpacity: 0.75 }"
+
+
 def patch_tints(checkout: Path) -> None:
     shell = checkout / "shell"
     changes = {
@@ -250,13 +255,16 @@ def patch_tints(checkout: Path) -> None:
             "GlassOverlay { anchors.fill: parent; radius: card.radius; tint: Color.popups.background }"),
         **{shell / f"plugins/{name}/{file}.qml": (
             "GlassOverlay { anchors.fill: parent; radius: card.radius }",
-            "GlassOverlay { anchors.fill: parent; radius: card.radius; tint: root.background }")
+            LAUNCHER_GLASS)
            for name, file in (("menu", "Menu"), ("clipboard", "Clipboard"), ("emojis", "Emojis"))},
     }
     for path, (before, after) in changes.items():
         source = path.read_text()
         if path.name == "Bar.qml":
             source = source.replace("      baseOpacity: 0.80\n", "      baseOpacity: 0.75\n")
+        # Launchers of earlier versions used the panels' opacity.
+        source = source.replace("GlassOverlay { anchors.fill: parent; radius: card.radius; tint: root.background }",
+                                LAUNCHER_GLASS)
         if after not in source:
             source = replace_once(source, before, after, path)
         path.write_text(source)
@@ -269,12 +277,14 @@ def patch_secondary_text(checkout: Path) -> None:
         changes = [("opacity: root.filterText ? 1 : 0.58",
                     "opacity: root.filterText ? 1 : 0.72")]
         if name == "menu":
-            changes += [("opacity: 0.52", "opacity: 0.86"),
+            source = source.replace("opacity: 0.86\n", "opacity: 1\n", 1)
+            changes += [("opacity: 0.52", "opacity: 1"),
                         ('opacity: row.kind === "menu" || row.kind === "link" ? 0.36 : 0',
                          'opacity: row.kind === "menu" || row.kind === "link" ? 0.60 : 0')]
         else:
+            source = source.replace('entryType === "file" ? 0.86 : 1.0', 'entryType === "file" ? 1.0 : 1.0')
             changes.append(('opacity: parent.parent.entryType === "image" || parent.parent.entryType === "file" ? 0.72 : 1.0',
-                            'opacity: parent.parent.entryType === "image" || parent.parent.entryType === "file" ? 0.86 : 1.0'))
+                            'opacity: parent.parent.entryType === "image" || parent.parent.entryType === "file" ? 1.0 : 1.0'))
         for before, after in changes:
             if after not in source:
                 source = replace_once(source, before, after, path)

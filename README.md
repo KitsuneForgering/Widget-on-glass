@@ -1,12 +1,66 @@
 # Widget on Glass
 
-Widget on Glass adiciona uma superfície translúcida aos widgets da shell Omarchy. O fundo recebe blur do Hyprland; um shader desenha a cor correspondente a cada superfície do tema com 75% de opacidade na barra e 80% nos painéis, além de um reflexo nas bordas. O conteúdo mantém suas cores. O projeto é para quem usa a barra e os painéis padrão do Omarchy e quer testar esse visual sem clonar cada plugin.
+Widget on Glass puts a translucent glass material on the Omarchy shell.
+Hyprland blurs the desktop behind each surface. A shader paints the surface's
+own theme colour on top at 75% opacity and adds a thin rim light. A
+screen-space lens then bends real desktop pixels across each surface's edge.
+Text and icons keep their colours.
 
-**Estado atual:** é um piloto inspirado no Liquid Glass da Apple. Todas as superfícies de vidro da shell (módulos da barra, painéis, menu, clipboard, emojis, popups, notificações e OSD) usam o `screen_shader` do Hyprland para refratar uma faixa estreita da borda com pixels reais do desktop. O fundo sob o centro de cada superfície continua apenas com blur, sem refração. Não reproduz o material proprietário da Apple. A integração de refração está direcionada a Omarchy `4.0.4`, Hyprland `0.56.2` e Quickshell `0.3.1`; outras versões podem precisar de ajustes no adaptador.
+![The Omarchy menu on glass over a colourful desktop](Docs/screenshots/overview.png)
 
-## Instalar
+**Status:** a pilot inspired by Apple's Liquid Glass, not a reproduction of it.
+The area behind the centre of a surface is blurred, not refracted; only a narrow
+band at each edge refracts. Built and tested against Omarchy `4.0.4`, Hyprland
+`0.56.2` and Quickshell `0.3.1`. Other versions may need changes to the adapter.
 
-Na sessão Omarchy, com `git`, `python3` e Qt Shader Tools (`/usr/lib/qt6/bin/qsb`) disponíveis:
+## Two ways to use it
+
+| | Marketplace plugin | Full installer |
+|---|---|---|
+| Surfaces | Bar and menu | Bar, panels, menu, clipboard, emojis, popups, notifications, OSD and their inner rows, chips and buttons |
+| How | `omarchy plugin add` | Patches a checkout of the Omarchy source and links the system to it |
+| Needs `sudo` | No | Yes, once, for `omarchy dev link` |
+| Undo | `omarchy plugin remove` | `omarchy dev unlink` |
+
+A third-party plugin can replace the bar and the menu, but it cannot restyle
+panels, notifications or the OSD, which belong to the shell. The full installer
+covers those.
+
+## Gallery
+
+| Menu | Emojis |
+|---|---|
+| ![Menu card on glass](Docs/screenshots/menu.png) | ![Emoji picker on glass](Docs/screenshots/emojis.png) |
+
+| Audio panel | Volume OSD |
+|---|---|
+| ![Audio panel with glass device chips](Docs/screenshots/panel-audio.png) | ![Volume OSD on glass](Docs/screenshots/osd.png) |
+
+Bar modules, left and right:
+
+![Glass bar modules](Docs/screenshots/bar.png)
+
+Look at the white diagonal lines where they cross a card's edge: the lens bends
+them there.
+
+## Install the plugin
+
+The plugin lives in its own repository,
+[omarchy-glass](https://github.com/KitsuneForgering/omarchy-glass):
+
+```sh
+omarchy plugin add https://github.com/KitsuneForgering/omarchy-glass.git --enable
+```
+
+Enabling it makes the glass bar the active bar. Its README explains how to point
+the menu button and the menu keys at the glass menu. The plugin is generated
+from the Omarchy sources by `integrations/marketplace/build.py` in this
+repository.
+
+## Install on every surface
+
+In an Omarchy session, with `git`, `python3` and Qt Shader Tools
+(`/usr/lib/qt6/bin/qsb`) available:
 
 ```sh
 git clone https://github.com/KitsuneForgering/Widget-on-glass.git
@@ -14,49 +68,97 @@ cd Widget-on-glass
 ./install.sh
 ```
 
-O instalador lê a versão do pacote Omarchy, baixa o tag correspondente do código-fonte oficial para `~/.local/share/widget-on-glass/`, aplica a integração, executa `omarchy dev link --no-reboot` e recarrega a shell na sessão Hyprland atual. O comando `dev link` usa `sudo` para apontar o sistema ao checkout. O reload sincroniza `OMARCHY_PATH` no Hyprland e no gerenciador de serviços do usuário antes de executar `omarchy restart shell`, preservando os atalhos da sessão. A barra padrão, seus painéis de teclado, menu, clipboard, emojis, notificações popup e OSD recebem o material após o reload. Reinicie depois para alinhar os demais serviços do sistema ao checkout.
+The installer:
 
-Para preparar e revisar o checkout sem alterar a instalação ativa:
+1. Reads the installed Omarchy package version.
+2. Clones the matching tag of the official source into
+   `~/.local/share/widget-on-glass/`.
+3. Applies the adapter.
+4. Runs `omarchy dev link --no-reboot`, which uses `sudo` to point the system at
+   the checkout.
+5. Reloads the shell in the current Hyprland session.
+
+The reload sets `OMARCHY_PATH` in both Hyprland and the user service manager
+before `omarchy restart shell`, so your keybindings keep working. Reboot later
+to move the remaining session services to the checkout.
+
+To prepare and review the checkout without touching the running system:
 
 ```sh
 ./install.sh --prepare-only
 ```
 
-Quando estiver pronto para ativar o checkout preparado, execute novamente em um terminal para informar a senha do `sudo` quando solicitada:
-
-```sh
-./install.sh
-```
-
-O instalador reutiliza o checkout preparado sem baixar tudo novamente. Se já executou a versão anterior do instalador e quer apenas ativar a shell nesta sessão, sem repetir o `sudo`:
+Run `./install.sh` again from a terminal when you are ready; it reuses the
+prepared checkout and asks for the `sudo` password. If the checkout is already
+linked and you only want to reload the shell, without `sudo`:
 
 ```sh
 ./install.sh --reload-only
 ```
 
-Ao ativar a shell, o instalador também torna transparente o fundo do preview do plugin local `tornikegomareli.spaces`, quando ele está instalado, para que o `PopupCard` compartilhado apareça. O arquivo original fica em `Spaces.qml.widget-on-glass.bak` ao lado do plugin. Painéis de terceiros que usam `KeyboardPanel` ou `PopupCard` recebem o material pelo componente compartilhado; fundos opacos desenhados dentro de outros plugins ainda precisam de adaptação própria.
+The installer refuses to overwrite a directory that is not a prepared checkout,
+and it stops if the Omarchy source changed at any point the adapter edits. Do
+not activate a partly prepared checkout.
 
-O reload também atualiza o caminho usado por `omarchy restart shell` e pelos keybinds do Hyprland. Um reboot posterior inicia toda a sessão diretamente no checkout.
+If the local `tornikegomareli.spaces` plugin is installed, the reload also makes
+its preview background transparent so the shared `PopupCard` glass shows
+through, and keeps the original as `Spaces.qml.widget-on-glass.bak`.
+Third-party panels built on `KeyboardPanel` or `PopupCard` get the material
+through those shared components. Opaque backgrounds drawn inside other plugins
+still need their own changes.
 
-O instalador recusa sobrescrever um diretório existente que não seja um checkout preparado. Ele também falha se o código-fonte do Omarchy tiver mudado nos pontos que o adaptador modifica. Nesse caso, não ative um checkout parcialmente preparado.
-
-## Voltar à shell do pacote
+### Go back to the packaged shell
 
 ```sh
 omarchy dev unlink --no-reboot
 ```
 
-Reinicie depois. O checkout criado pelo instalador permanece em `~/.local/share/widget-on-glass/` para inspeção; esse comando não o remove.
+Reboot afterwards. The checkout stays in `~/.local/share/widget-on-glass/` for
+inspection; unlinking does not delete it.
 
-## O que está incluído
+## Settings
 
-- Blur do desktop real delimitado por `BackgroundEffect.blurRegion` nos hosts integrados.
-- Lente de borda via `screen_shader` em todas as superfícies de vidro, acompanhando posição e tamanho de cada uma. Ela fica suspensa quando outro shader já está configurado, quando há mais de uma tela ativa e sobre janelas em tela cheia.
-- Containers internos também em vidro: itens selecionados, linhas, chips e botões preenchidos ganham borda refletiva e lente pelo `BorderSurface` compartilhado; popups de dropdown e o diálogo de confirmação usam o material completo. O véu de menu, clipboard e emojis tem um recorte sob o cartão, para o vidro mostrar o desktop desfocado em vez de ficar escurecido.
-- `bar.glassLens: false` no `~/.config/omarchy/shell.json` desliga só a lente. Ela também se desliga com `bar.glassEnabled: false`, `bar.glassReducedTransparency: true` ou `bar.glassHighContrast: true`.
-- Superfície e reflexo de borda renderizados na GPU pelo Quickshell; o reflexo fica acima dos widgets sem receber cliques.
-- Fallback opaco para o backend de renderização por software.
+Both the plugin and the installer read these keys from the `bar` object in
+`~/.config/omarchy/shell.json`:
 
-Barras alternativas e plugins que criam janelas próprias não recebem o efeito automaticamente. Fundos opacos desenhados dentro de um widget também podem esconder a superfície. Image picker e tela de bloqueio mantêm o visual original.
+| Key | Effect |
+|---|---|
+| `glassEnabled: false` | Opaque bar and keyboard panels, no blur and no lens |
+| `glassLens: false` | Keep the glass, turn off the rim lens |
+| `glassReducedTransparency: true` | Opaque bar and keyboard panels, no lens |
+| `glassHighContrast: true` | Opaque bar and keyboard panels, no lens |
 
-A [implementação e validação](Docs/implementation.md) descreve a cobertura atual. A [pesquisa sobre refração do desktop](Docs/compositor-refraction.md) explica por que a etapa óptica restante depende do renderizador do Hyprland. Para executar apenas a demonstração Quickshell deste repositório, veja [Docs/implementation.md](Docs/implementation.md).
+The lens picks up changes to this file immediately.
+
+## What the installer changes
+
+- **Blur:** real desktop blur, limited to each host's region with
+  `BackgroundEffect.blurRegion`.
+- **Rim lens:** one generated Hyprland `screen_shader` follows the position and
+  size of every visible glass surface. It never replaces a shader you
+  configured, turns off with more than one monitor, steps aside for fullscreen
+  windows and returns after `hyprctl reload`.
+- **Inner containers:** selected rows, device chips and filled buttons get a rim
+  light and the lens through the shared `BorderSurface`; dropdown popups and the
+  confirmation dialog use the full material.
+- **Launcher veil:** the veil around the menu, clipboard and emoji cards leaves a
+  hole under the card, so the glass shows the blurred desktop instead of a
+  darkened one.
+- **Tray drawer:** the drawer only takes the space it has revealed instead of
+  reserving its full width.
+- **Contrast:** menu and clipboard secondary text is drawn fully opaque, so it
+  stays above 4.5:1 over any backdrop at 75% opacity. Dimmed labels drawn by
+  stock panel widgets can fall below that over very bright backdrops.
+- **Software rendering:** an opaque fallback is used when Qt renders without a
+  GPU.
+
+Alternative bars, plugins that create their own windows, the image picker and
+the lock screen keep their original look.
+
+## More
+
+- [Implementation and validation](Docs/implementation.md): what is covered and
+  how it was tested, including the standalone Quickshell demo.
+- [Desktop refraction research](Docs/compositor-refraction.md): why full-area
+  refraction needs changes to Hyprland's renderer, and how the rim lens was
+  measured.

@@ -11,7 +11,7 @@ Item {
     property bool reducedTransparency: false
     property bool active: false
     property bool reflectionOnly: false
-    property real baseOpacity: 0.80
+    property real baseOpacity: 0.75
     property color tint: "#182330"
     property bool lens: !reflectionOnly && !reducedTransparency && !highContrast
 
